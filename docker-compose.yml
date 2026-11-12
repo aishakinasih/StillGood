@@ -1,0 +1,58 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: still-good-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: stillgood
+      POSTGRES_USER: stillgood
+      POSTGRES_PASSWORD: stillgood_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - still-good-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stillgood -d stillgood"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: still-good-api
+    restart: unless-stopped
+    env_file:
+      - ./apps/api/.env
+    environment:
+      PORT: 4000
+      DATABASE_URL: postgresql://stillgood:stillgood_dev_password@db:5432/stillgood?schema=public
+      WEB_PUBLIC_URL: http://localhost:3000
+      CORS_ORIGINS: http://localhost:3000
+    ports:
+      - "4000:4000"
+    volumes:
+      - still-good-uploads:/workspace/apps/api/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        API_INTERNAL_URL: http://api:4000
+    container_name: still-good-web
+    restart: unless-stopped
+    environment:
+      API_INTERNAL_URL: http://api:4000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  still-good-db:
+  still-good-uploads:

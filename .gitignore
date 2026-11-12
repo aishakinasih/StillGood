@@ -1,0 +1,12 @@
+node_modules/
+.next/
+.turbo/
+.env
+.env.*.local
+apps/api/.env
+apps/api/uploads/*
+!apps/api/uploads/.gitkeep
+apps/api/src/generated/
+package-lock.json
+coverage/
+.DS_Store

@@ -1,0 +1,188 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id         Int      @id @default(autoincrement())
+  name       String   @db.VarChar(100)
+  email      String   @unique @db.VarChar(190)
+  phone      String?  @db.VarChar(30)
+  password   String   @db.VarChar(255)
+  role       String   @default("buyer") @db.VarChar(20)
+  address    String?  @db.VarChar(255)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  store         Store?
+  buyer_orders  Order[]        @relation("BuyerOrders")
+  notifications Notification[]
+
+  @@map("users")
+}
+
+model Store {
+  id           Int      @id @default(autoincrement())
+  owner_id     Int?     @unique
+  name         String   @db.VarChar(120)
+  address      String?  @db.VarChar(255)
+  latitude     Float?
+  longitude    Float?
+  phone        String?  @db.VarChar(30)
+  bank_account String?  @db.VarChar(100)
+  logo         String?  @db.VarChar(500)
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime @updatedAt @db.Timestamptz(6)
+
+  owner   User?     @relation(fields: [owner_id], references: [id], onDelete: SetNull)
+  products Product[]
+  orders   Order[]
+
+  @@map("stores")
+}
+
+model Category {
+  id         Int      @id @default(autoincrement())
+  name       String   @unique @db.VarChar(80)
+  active     Boolean  @default(true)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  products Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  id             Int      @id @default(autoincrement())
+  store_id       Int
+  category_id    Int
+  name           String   @db.VarChar(120)
+  description    String   @db.Text
+  stock          Int      @default(0)
+  original_price Int
+  sale_price     Int
+  safe_until     String   @db.VarChar(5)
+  pickup_from    String   @db.VarChar(5)
+  pickup_until   String   @db.VarChar(5)
+  image          String?  @db.VarChar(500)
+  active         Boolean  @default(true)
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime @updatedAt @db.Timestamptz(6)
+
+  store       Store       @relation(fields: [store_id], references: [id], onDelete: Restrict)
+  categoryRef Category    @relation(fields: [category_id], references: [id], onDelete: Restrict)
+  order_items OrderItem[]
+
+  @@index([store_id, active, stock])
+  @@index([category_id, active])
+  @@map("products")
+}
+
+model Order {
+  id                    Int       @id @default(autoincrement())
+  buyer_id              Int
+  store_id              Int
+  buyer_name            String    @db.VarChar(100)
+  buyer_phone           String    @db.VarChar(30)
+  pickup_method         String    @db.VarChar(20)
+  payment_method        String    @db.VarChar(30)
+  status                String    @default("Menunggu Pembayaran") @db.VarChar(40)
+  payment_status        String    @default("PENDING") @db.VarChar(20)
+  payment_provider      String    @default("MOCK") @db.VarChar(20)
+  provider_order_id     String?   @unique @db.VarChar(50)
+  provider_transaction_id String? @db.VarChar(100)
+  pickup_pin            String    @db.VarChar(6)
+  cancel_until          DateTime? @db.Timestamptz(6)
+  seller_deadline       DateTime? @db.Timestamptz(6)
+  paid_at               DateTime? @db.Timestamptz(6)
+  refunded_at           DateTime? @db.Timestamptz(6)
+  total                 Int       @default(0)
+  created_at            DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime  @updatedAt @db.Timestamptz(6)
+
+  buyer         User           @relation("BuyerOrders", fields: [buyer_id], references: [id], onDelete: Restrict)
+  store         Store          @relation(fields: [store_id], references: [id], onDelete: Restrict)
+  items         OrderItem[]
+  review        Review?
+  payment       Payment?
+  notifications Notification[]
+
+  @@index([buyer_id, created_at])
+  @@index([store_id, status, seller_deadline])
+  @@index([payment_status, created_at])
+  @@map("orders")
+}
+
+model OrderItem {
+  id                    Int      @id @default(autoincrement())
+  order_id              Int
+  product_id            Int?
+  product_name_snapshot String   @db.VarChar(120)
+  product_image_snapshot String? @db.VarChar(500)
+  original_price_snapshot Int
+  quantity              Int
+  unit_price            Int
+  created_at            DateTime @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime @updatedAt @db.Timestamptz(6)
+
+  order   Order    @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [product_id], references: [id], onDelete: SetNull)
+
+  @@index([order_id])
+  @@map("order_items")
+}
+
+model Payment {
+  id                       Int       @id @default(autoincrement())
+  order_id                 Int       @unique
+  provider                 String    @db.VarChar(20)
+  provider_transaction_id  String?   @db.VarChar(100)
+  payment_method           String    @db.VarChar(30)
+  amount                   Int
+  status                   String    @default("PENDING") @db.VarChar(20)
+  snap_token               String?   @db.VarChar(255)
+  redirect_url             String?   @db.VarChar(1000)
+  raw_notification         Json?
+  paid_at                  DateTime? @db.Timestamptz(6)
+  refunded_at              DateTime? @db.Timestamptz(6)
+  created_at               DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime  @updatedAt @db.Timestamptz(6)
+
+  order Order @relation(fields: [order_id], references: [id], onDelete: Cascade)
+
+  @@map("payments")
+}
+
+model Review {
+  id         Int      @id @default(autoincrement())
+  order_id   Int      @unique
+  rating     Int
+  comment    String?  @db.VarChar(500)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  order Order @relation(fields: [order_id], references: [id], onDelete: Cascade)
+
+  @@map("reviews")
+}
+
+model Notification {
+  id         Int       @id @default(autoincrement())
+  user_id    Int
+  order_id   Int?
+  type       String    @db.VarChar(40)
+  message    String    @db.VarChar(500)
+  read_at    DateTime? @db.Timestamptz(6)
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+
+  user  User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  order Order? @relation(fields: [order_id], references: [id], onDelete: SetNull)
+
+  @@index([user_id, read_at, created_at])
+  @@map("notifications")
+}
