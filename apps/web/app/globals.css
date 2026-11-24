@@ -297,3 +297,36 @@ body,button,input,select,textarea,h1,h2,h3,p,.eyebrow,.product-title,.sale-price
 .qris-option>span:nth-child(2)>small{font:400 10px Poppins,sans-serif;color:#8b806e}
 .qris-option>strong{color:#7a9a65;font-size:18px}
 @media(max-width:680px){.account-modal{padding:25px 20px 22px}.account-modal .auth-brand{height:78px}.account-modal .auth-brand img{width:85px;height:78px}.account-modal h2{font-size:23px}.account-modal .auth-tabs button{font-size:11px;padding:10px 5px}.account-modal .auth-form label input{height:46px;font-size:12px}}
+
+/* ===== Tunai + Ringkasan pesanan ===== */
+.payment-row.qris-only{display:flex;flex-direction:column;gap:10px}
+.qris-option{cursor:pointer}
+.qris-option:not(.active){background:#fffdfa;border-color:#f3e7d1}
+.qris-option:not(.active)>strong{visibility:hidden}
+.summary-modal{width:min(560px,100%);background:#ffe9b8;padding:22px}
+.summary-modal h2{margin:4px 0 14px}
+.summary-card{background:#fffdfa;border-radius:16px;padding:16px 18px;margin-bottom:12px}
+.summary-card h3{font:700 15px Poppins,sans-serif;margin:0 0 14px;color:#252a43}
+.summary-steps{list-style:none;margin:0;padding:0;display:flex;align-items:flex-start;position:relative}
+.summary-steps::before{content:"";position:absolute;left:12%;right:12%;top:15px;height:7px;background:#ffd98a;border-radius:4px}
+.summary-steps li{flex:1;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;position:relative;z-index:1}
+.summary-steps li i{width:30px;height:30px;border-radius:50%;background:#ffe3a1;border:3px solid #ffc342;display:block}
+.summary-steps li span{font:400 9px Poppins,sans-serif;color:#60594d;line-height:1.3;max-width:84px}
+.summary-steps li.done i{background:#ffc342}
+.summary-steps li.current i{background:#ffc342;box-shadow:0 0 0 4px #ffc34244}
+.summary-steps li.current span{font-weight:700;color:#252a43}
+.summary-top{display:flex;align-items:center;justify-content:flex-end;gap:12px;border-bottom:1px solid #f3e7d1;padding-bottom:12px}
+.summary-no{margin-right:auto;font:700 12px Poppins,sans-serif;color:#91733b}
+.summary-timer{font:500 13px Poppins,sans-serif;color:#252a43}
+.summary-cancel{border:0;background:#ffc342;color:#252a43;border-radius:20px;padding:8px 24px;font:600 13px Poppins,sans-serif;cursor:pointer}
+.summary-cancel:disabled,.summary-cancel[hidden]{display:none}
+.summary-total{text-align:right;font:500 14px Poppins,sans-serif;margin:14px 0 6px;color:#252a43}
+.summary-label{font:500 14px Poppins,sans-serif;margin:8px 0 10px;color:#252a43}
+.summary-items{display:grid;gap:10px}
+.summary-line{display:flex;justify-content:space-between;gap:12px;font:400 13px Poppins,sans-serif;color:#252a43}
+.summary-pay{margin-top:14px;padding-top:12px;border-top:1px dashed #efdfbf;font:400 11px Poppins,sans-serif;color:#817866;line-height:1.5}
+.summary-pay b{color:#252a43}
+.summary-code{background:#ffd98a;text-align:center;width:100%;margin:0 0 8px}
+.summary-code b{letter-spacing:8px}
+.summary-hint{font:400 10px Poppins,sans-serif;color:#817866;text-align:center;line-height:1.55;margin:0 0 12px}
+@media(max-width:680px){.summary-steps li span{font-size:8px}.summary-modal{padding:18px 14px}}

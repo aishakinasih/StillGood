@@ -73,7 +73,7 @@ export async function runOrderSchedulerOnce() {
   try {
     const now = new Date();
     const sellerOverdue = await prisma.order.findMany({
-      where: { status: "Menunggu Konfirmasi", payment_status: "PAID", seller_deadline: { lt: now } },
+      where: { status: "Menunggu Konfirmasi", OR: [{payment_status: "PAID"}, {payment_provider: "CASH"}], seller_deadline: { lt: now } },
       take: 50,
       orderBy: { seller_deadline: "asc" },
     });
