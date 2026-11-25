@@ -5,12 +5,15 @@ import cors from "cors";
 import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
 import { timingSafeEqual } from "node:crypto";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import apiRouter from "./routes/api.js";
 import { prisma } from "./lib/prisma.js";
 import { HttpError } from "./lib/errors.js";
 import { runOrderSchedulerOnce } from "./services/scheduler.service.js";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
 app.disable("x-powered-by");
@@ -100,6 +103,9 @@ app.post("/internal/cron/order-scheduler", async (req, res, next) => {
     next(error);
   }
 });
+
+// Serve local uploaded images when running without Cloudinary credentials
+app.use("/uploads", express.static(path.resolve(__dirname, "../uploads")));
 
 // Main API routes
 app.use("/api", apiRouter);

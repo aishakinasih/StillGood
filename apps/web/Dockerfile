@@ -3,6 +3,7 @@ WORKDIR /workspace
 COPY package.json package.json
 COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
+COPY apps/api/prisma apps/api/prisma
 RUN npm install --workspaces --include-workspace-root
 
 FROM node:22-alpine AS builder

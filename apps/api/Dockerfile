@@ -4,6 +4,7 @@ ENV DATABASE_URL=postgresql://stillgood:stillgood_dev_password@db:5432/stillgood
 COPY package.json package.json
 COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
+COPY apps/api/prisma apps/api/prisma
 RUN npm install --workspaces --include-workspace-root
 COPY apps/api apps/api
 RUN npm --workspace apps/api run db:generate
