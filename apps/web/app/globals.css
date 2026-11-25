@@ -330,3 +330,35 @@ body,button,input,select,textarea,h1,h2,h3,p,.eyebrow,.product-title,.sale-price
 .summary-code b{letter-spacing:8px}
 .summary-hint{font:400 10px Poppins,sans-serif;color:#817866;text-align:center;line-height:1.55;margin:0 0 12px}
 @media(max-width:680px){.summary-steps li span{font-size:8px}.summary-modal{padding:18px 14px}}
+
+/* ===== Pesanan masuk (penjual), nota pembeli, edit toko ===== */
+.nav-link[hidden]{display:none!important}
+.nav-badge{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;margin-left:4px;border-radius:9px;background:#e9573f;color:#fff;font:700 10px 'DM Sans',sans-serif;vertical-align:middle}
+.nav-badge[hidden]{display:none}
+.incoming-list{display:grid;gap:13px;max-width:800px}
+.incoming-group{font:700 15px Manrope,sans-serif;margin:14px 0 0;color:#252a43}
+.incoming-group span{display:inline-grid;place-items:center;min-width:22px;height:22px;margin-left:6px;border-radius:11px;background:#ffe1a5;color:#7b5c18;font:700 11px 'DM Sans',sans-serif}
+.incoming-card{border-left:5px solid #ffc342}
+.incoming-actions{display:flex;flex-direction:column;gap:8px;min-width:150px}
+.order-actions .inc-primary{background:#ffc342;color:#252a43;border-radius:10px;padding:10px 14px;font-size:11px}
+.order-actions .inc-primary:hover{background:#f0ae2f}
+.order-actions .inc-danger{background:#fff6e2;border:1px solid #efdfbf;color:#b5532f;border-radius:10px;padding:9px 14px;font-size:11px}
+.deadline{color:#c87c25!important;font-weight:700}
+.order-code{color:#7b5c18!important}
+.order-code b{display:inline!important;font:800 12px Manrope,sans-serif;letter-spacing:3px;background:#ffe7b2;border-radius:6px;padding:2px 7px;margin-left:4px;color:#252a43}
+.history-summary{display:flex;gap:12px;flex-wrap:wrap}
+.history-summary span{background:#ffe2ad;border-radius:12px;padding:10px 16px;font:500 11px 'DM Sans',sans-serif;color:#7b5c18}
+.history-summary b{display:block;font:800 16px Manrope,sans-serif;color:#252a43;margin-top:2px}
+.verify-modal{width:min(420px,100%)}
+.verify-info{font:400 12px/1.55 'DM Sans',sans-serif;color:#817866;margin:0 0 6px}
+.verify-modal label{display:block;font-size:11px;color:#777061;font-weight:600;margin:12px 0 14px}
+.verify-modal input{display:block;width:100%;margin-top:6px;border:1px solid #eadfc9;background:#fffdf7;border-radius:10px;padding:12px;text-align:center;color:#252a43;font:800 24px Manrope,sans-serif;letter-spacing:8px;outline-color:#e7b33e}
+/* Edit informasi toko */
+.store-edit-modal{width:min(475px,100%)}
+.store-edit-modal label{display:block;font-size:11px;font-weight:600;color:#777061;margin:16px 0 0}
+.store-edit-modal label input:not([type=file]),.store-edit-modal textarea{display:block;width:100%;margin-top:6px;border:1px solid #eadfc9;background:#fffdf7;border-radius:10px;padding:12px;color:#252a43;font:13px 'DM Sans',sans-serif;outline-color:#e7b33e}
+.store-edit-modal textarea{resize:vertical;min-height:84px}
+.store-edit-modal input[type=file]{display:block;width:100%;margin-top:6px;padding:10px;border:1px dashed #dfc894;background:#fff7e7;border-radius:10px;color:#8b806e;font:11px 'DM Sans',sans-serif;cursor:pointer}
+.store-edit-modal input[type=file]::file-selector-button{margin-right:12px;border:0;border-radius:8px;background:#ffc342;color:#252a43;padding:8px 14px;font:700 11px 'DM Sans',sans-serif;cursor:pointer}
+.store-edit-modal .upload-hint{display:block;margin:7px 0 18px;font-size:10px;color:#a99d87}
+@media(max-width:680px){.incoming-actions{min-width:0}.incoming-card{flex-wrap:wrap}}

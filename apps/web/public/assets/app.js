@@ -58,10 +58,14 @@ function showPage(name) {
     )
   )
     return;
-  if (name === "seller" && currentUser?.role !== "seller") {
-    if (!currentUser) requireLogin("membuka toko penjual");
-    return;
-  }
+ if (name === "orders" && currentUser?.role !== "seller") {
+   if (!currentUser) requireLogin("melihat pesanan masuk");
+   return;
+ }
+ if (name === "seller" && currentUser?.role !== "seller") {
+   if (!currentUser) requireLogin("membuka toko penjual");
+   return;
+ }
   if (name === "admin" && currentUser?.role !== "admin") {
     if (!currentUser) requireLogin("membuka pengaturan");
     return;
@@ -82,6 +86,7 @@ function showPage(name) {
     .querySelectorAll(".nav-link")
     .forEach((b) => b.classList.toggle("active", b.dataset.page === navName));
   if (name === "history") loadOrders();
+  if (name === "orders") loadIncoming();
   if (name === "seller") {
     showSellerHome();
     loadSeller();
@@ -286,6 +291,7 @@ document
 function accountReady(me) {
   if (!me || !me.id) return;
   currentUser = me;
+  syncRoleNav();
   if (me.role !== "buyer") {
     cart = {};
     sessionStorage.removeItem("stillgood-cart-v2");
@@ -663,25 +669,91 @@ async function cancelOrder() {
     toast(e.message);
   }
 }
+
 let summaryOrder = null,
   summaryTimer = null,
-  summaryPoll = null;
+  summaryPoll = null,
+  ordersCache = [];
 const SUMMARY_STEP = {
   "Menunggu Konfirmasi": 0,
   Diproses: 1,
   "Siap Diambil": 2,
   Selesai: 3,
 };
+const ACTIVE_STATUS = ["Menunggu Konfirmasi", "Diproses", "Siap Diambil"];
+function isFinalStatus(st) {
+  return (
+    st === "Selesai" || st === "Ditolak" || String(st).startsWith("Dibatalkan")
+  );
+}
+function isCancelledStatus(st) {
+  return (
+    st === "Ditolak" ||
+    st === "Pembatalan Diproses" ||
+    String(st).startsWith("Dibatalkan")
+  );
+}
 function renderSummarySteps(status) {
-  const idx = SUMMARY_STEP[status] ?? 0;
+  const idx = SUMMARY_STEP[status];
   document.querySelectorAll("#summary-steps li").forEach((li, i) => {
-    li.classList.toggle("done", i < idx || status === "Selesai");
-    li.classList.toggle("current", i === idx && status !== "Selesai");
+    li.classList.toggle(
+      "done",
+      idx !== undefined && (i < idx || status === "Selesai")
+    );
+    li.classList.toggle(
+      "current",
+      idx !== undefined && i === idx && status !== "Selesai"
+    );
   });
 }
-function showOrderSummary(o) {
-  summaryOrder = o;
+function summaryHint(status, cash) {
+  if (isCancelledStatus(status))
+    return "Pesanan ini dibatalkan. Stok sudah dikembalikan.";
+  if (status === "Menunggu Konfirmasi")
+    return "Menunggu penjual mengonfirmasi pesananmu. Simpan kode unik di bawah.";
+  if (status === "Diproses") return "Penjual sedang menyiapkan pesananmu.";
+  if (status === "Siap Diambil")
+    return cash
+      ? "Pesananmu siap diambil! Tunjukkan kode unik dan bayar tunai langsung ke penjual."
+      : "Pesananmu siap diambil! Tunjukkan kode unik ini kepada penjual.";
+  if (status === "Selesai")
+    return "Pesanan selesai. Terima kasih sudah menyelamatkan makanan!";
+  return "Tunjukkan kode unik ini kepada penjual saat mengambil pesanan.";
+}
+function renderSummaryPay(o) {
   const cash = o.payment_method === "Tunai";
+  document.getElementById("summary-pay").innerHTML = cash
+    ? o.payment_status === "PAID"
+      ? `<b>Metode: Tunai</b> · Lunas, pembayaran sudah diterima penjual.`
+      : isCancelledStatus(o.status)
+      ? `<b>Metode: Tunai</b> · Tidak ada pembayaran yang diproses.`
+      : `<b>Metode: Tunai</b> · Belum dibayar. Siapkan <b>${rupiah(
+          o.total
+        )}</b> dan bayar langsung ke penjual saat mengambil pesanan.`
+    : `<b>Metode: QRIS</b> · ${
+        o.payment_status === "REFUNDED"
+          ? "Dana dikembalikan."
+          : "Pembayaran diterima."
+      }`;
+}
+function renderSummaryState(o) {
+  const cash = o.payment_method === "Tunai";
+  renderSummarySteps(o.status);
+  renderSummaryPay(o);
+  document.getElementById("summary-hint").textContent = summaryHint(
+    o.status,
+    cash
+  );
+  const btn = document.getElementById("summary-cancel"),
+    label = document.getElementById("summary-timer");
+  if (o.status !== "Menunggu Konfirmasi") {
+    clearInterval(summaryTimer);
+    btn.hidden = true;
+    label.hidden = true;
+  }
+}
+function showOrderSummary(o, opts = {}) {
+  summaryOrder = { ...o };
   document.getElementById("summary-no").textContent = "Pesanan #" + o.id;
   document.getElementById("summary-total").textContent = rupiah(o.total);
   document.getElementById("summary-code").textContent = o.pickup_pin;
@@ -695,19 +767,12 @@ function showOrderSummary(o) {
         ).toLocaleString("id-ID")}</span></div>`
     )
     .join("");
-  document.getElementById("summary-pay").innerHTML = cash
-    ? `<b>Metode: Tunai</b> · Belum dibayar. Siapkan <b>${rupiah(
-        o.total
-      )}</b> dan bayar langsung ke penjual saat mengambil pesanan.`
-    : `<b>Metode: QRIS</b> · Pembayaran diterima.`;
-  document.getElementById("summary-hint").textContent =
-    "Tunjukkan kode unik ini kepada penjual saat mengambil pesanan.";
-  renderSummarySteps(o.status);
   startSummaryTimer(o);
+  renderSummaryState(summaryOrder);
   openModal("summary-modal");
   clearInterval(summaryPoll);
   summaryPoll = setInterval(refreshSummary, 4000);
-  loadProducts();
+  if (!opts.skipReload) loadProducts();
 }
 function startSummaryTimer(o) {
   clearInterval(summaryTimer);
@@ -742,19 +807,12 @@ async function refreshSummary() {
   try {
     const d = await api("/api/payments/status/" + summaryOrder.id);
     summaryOrder.status = d.status;
-    renderSummarySteps(d.status);
-    if (
-      String(d.status).startsWith("Dibatalkan") ||
-      d.status === "Ditolak" ||
-      d.status === "Pembatalan Diproses"
-    ) {
+    summaryOrder.payment_status = d.payment_status;
+    renderSummaryState(summaryOrder);
+    if (isFinalStatus(d.status) || d.status === "Pembatalan Diproses")
       clearInterval(summaryPoll);
-      clearInterval(summaryTimer);
-      document.getElementById("summary-cancel").hidden = true;
-      document.getElementById("summary-timer").hidden = true;
-      document.getElementById("summary-hint").textContent =
-        "Pesanan ini dibatalkan. Stok sudah dikembalikan.";
-    }
+    if (document.getElementById("history-page").classList.contains("active"))
+      loadOrders(true);
   } catch (e) {}
 }
 function closeSummary() {
@@ -777,11 +835,42 @@ async function cancelFromSummary() {
     toast(e.message);
   }
 }
-async function loadOrders() {
+function openOrderNota(id) {
+  const o = ordersCache.find((x) => x.id === id);
+  if (o) showOrderSummary(o, { skipReload: true });
+}
+function setHistoryIntro(seller) {
+  const pg = document.getElementById("history-page"),
+    e = pg.querySelector(".eyebrow"),
+    h = pg.querySelector("h1"),
+    t = pg.querySelector(".page-intro p");
+  if (!pg.dataset.orig)
+    pg.dataset.orig = JSON.stringify([
+      e.textContent,
+      h.innerHTML,
+      t.textContent,
+    ]);
+  const o = JSON.parse(pg.dataset.orig);
+  if (seller) {
+    e.textContent = "CATATAN PENJUALAN";
+    h.innerHTML = "Riwayat <span>penjualan</span>";
+    t.textContent =
+      "Pesanan yang sudah selesai atau dibatalkan. Pesanan yang sedang berjalan ada di menu Pesanan masuk.";
+  } else {
+    e.textContent = o[0];
+    h.innerHTML = o[1];
+    t.textContent = o[2];
+  }
+}
+async function loadOrders(silent) {
+  if (currentUser?.role === "seller") return loadSellerHistory(silent);
+  setHistoryIntro(false);
   const list = document.getElementById("order-list");
-  list.innerHTML = '<div class="loading">Memuat riwayat pesanan…</div>';
+  if (!silent)
+    list.innerHTML = '<div class="loading">Memuat riwayat pesanan…</div>';
   try {
     const orders = await api("/api/orders");
+    ordersCache = orders;
     if (!orders.length) {
       list.innerHTML =
         '<div class="loading">Belum ada pesanan. Makanan baikmu menunggu.</div>';
@@ -790,12 +879,20 @@ async function loadOrders() {
     list.innerHTML = orders
       .map((o) => {
         const names = o.items
-          .map((i) => `${i.product?.name || "Menu"} × ${i.quantity}`)
+          .map(
+            (i) =>
+              `${i.product?.name || i.product_name_snapshot || "Menu"} × ${
+                i.quantity
+              }`
+          )
           .join(", ");
         const img = o.items[0]?.product?.image || "/assets/still-good-mark.png";
         const canCancel =
           o.status === "Menunggu Konfirmasi" &&
           new Date(o.cancel_until) > Date.now();
+        const active = ACTIVE_STATUS.includes(o.status);
+        const unpaidCash =
+          o.payment_method === "Tunai" && o.payment_status !== "PAID" && active;
         return `<article class="order-card"><img class="order-thumb" src="${esc(
           img
         )}"><div class="order-info"><b>${esc(names)}</b><small>${new Date(
@@ -805,21 +902,21 @@ async function loadOrders() {
           timeStyle: "short",
         })} · ${
           o.pickup_method === "pickup" ? "Ambil sendiri" : "GoSend"
-        }</small><span>${rupiah(o.total)} · ${
-          o.payment_method
-        }</span><span class="status-pill">${esc(
+        }</small><span>${rupiah(o.total)} · ${esc(o.payment_method)}${
+          unpaidCash ? " · bayar saat pengambilan" : ""
+        }</span>${
+          active
+            ? `<span class="order-code">Kode unik <b>${esc(
+                o.pickup_pin
+              )}</b></span>`
+            : ""
+        }<span class="status-pill">${esc(
           o.status
         )}</span></div><div class="order-actions">${
           canCancel
             ? `<button onclick="cancelAny(${o.id})">Batalkan</button>`
             : ""
-        }${
-          o.status === "Siap Diambil"
-            ? `<button onclick="showPin(${o.id})">PIN ${esc(
-                o.pickup_pin
-              )}</button>`
-            : ""
-        }${
+        }<button onclick="openOrderNota(${o.id})">Lihat nota</button>${
           o.status === "Selesai"
             ? `<button onclick="rateOrder(${o.id})">Beri ulasan ★</button>`
             : ""
@@ -827,9 +924,254 @@ async function loadOrders() {
       })
       .join("");
   } catch (e) {
-    list.innerHTML = `<div class="loading">${esc(e.message)}</div>`;
+    if (!silent)
+      list.innerHTML = `<div class="loading">${esc(e.message)}</div>`;
   }
 }
+async function loadSellerHistory(silent) {
+  setHistoryIntro(true);
+  const list = document.getElementById("order-list");
+  if (!silent)
+    list.innerHTML = '<div class="loading">Memuat riwayat penjualan…</div>';
+  try {
+    const orders = (await api("/api/orders"))
+      .filter((o) => isFinalStatus(o.status))
+      .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+    if (!orders.length) {
+      list.innerHTML =
+        '<div class="loading">Belum ada pesanan selesai atau dibatalkan. Pesanan yang sedang berjalan ada di menu Pesanan masuk.</div>';
+      return;
+    }
+    const done = orders.filter((o) => o.status === "Selesai");
+    const income = done.reduce((n, o) => n + o.total, 0);
+    list.innerHTML =
+      `<div class="history-summary"><span>Pesanan selesai <b>${
+        done.length
+      }</b></span><span>Total pendapatan <b>${rupiah(
+        income
+      )}</b></span></div>` +
+      orders
+        .map((o) => {
+          const names = o.items
+            .map(
+              (i) =>
+                `${i.product?.name || i.product_name_snapshot || "Menu"} × ${
+                  i.quantity
+                }`
+            )
+            .join(", ");
+          const img =
+            o.items[0]?.product?.image || "/assets/still-good-mark.png";
+          const paid =
+            o.status === "Selesai" ? "Lunas" : "Tidak ada pembayaran masuk";
+          return `<article class="order-card"><img class="order-thumb" src="${esc(
+            img
+          )}"><div class="order-info"><b>#${o.id} · ${esc(
+            o.buyer_name
+          )}</b><small>${esc(names)}</small><small>${new Date(
+            o.updated_at
+          ).toLocaleString("id-ID", {
+            dateStyle: "medium",
+            timeStyle: "short",
+          })} · ${
+            o.pickup_method === "pickup" ? "Ambil sendiri" : "GoSend"
+          } · ${esc(o.buyer_phone)}</small><span>${rupiah(o.total)} · ${esc(
+            o.payment_method
+          )} · ${paid}</span><span class="status-pill">${esc(
+            o.status
+          )}</span></div></article>`;
+        })
+        .join("");
+  } catch (e) {
+    if (!silent)
+      list.innerHTML = `<div class="loading">${esc(e.message)}</div>`;
+  }
+}
+let incomingOrders = [],
+  knownIncoming = null,
+  verifyOrderId = null;
+function syncRoleNav() {
+  const seller = currentUser?.role === "seller",
+    b = document.querySelector('.nav-link[data-page="orders"]');
+  if (b) b.hidden = !seller;
+  if (seller) {
+    knownIncoming = null;
+    incomingTick();
+  }
+}
+function updateIncomingBadge() {
+  const n = incomingOrders.filter(
+      (o) => o.status === "Menunggu Konfirmasi"
+    ).length,
+    el = document.getElementById("incoming-badge");
+  if (el) {
+    el.textContent = n;
+    el.hidden = !n;
+  }
+}
+async function incomingTick() {
+  if (currentUser?.role !== "seller") return;
+  try {
+    incomingOrders = await api("/api/seller/orders");
+    const ids = new Set(
+      incomingOrders
+        .filter((o) => o.status === "Menunggu Konfirmasi")
+        .map((o) => o.id)
+    );
+    if (knownIncoming && [...ids].some((id) => !knownIncoming.has(id)))
+      toast("Pesanan baru masuk! Segera konfirmasi.");
+    knownIncoming = ids;
+    updateIncomingBadge();
+    if (document.getElementById("orders-page")?.classList.contains("active"))
+      renderIncoming();
+  } catch (e) {}
+}
+async function loadIncoming() {
+  const l = document.getElementById("incoming-list");
+  if (!incomingOrders.length)
+    l.innerHTML = '<div class="loading">Memuat pesanan masuk…</div>';
+  await incomingTick();
+  renderIncoming();
+}
+function incomingCard(o) {
+  const names = o.items
+    .map(
+      (i) =>
+        `${i.product?.name || i.product_name_snapshot || "Menu"} × ${
+          i.quantity
+        }`
+    )
+    .join(", ");
+  const img = o.items[0]?.product?.image || "/assets/still-good-mark.png";
+  const cash = o.payment_method === "Tunai";
+  const payTxt = cash
+    ? o.payment_status === "PAID"
+      ? "Tunai · Lunas"
+      : "Tunai · terima " + rupiah(o.total) + " saat pengambilan"
+    : "QRIS · Lunas";
+  let actions = "";
+  if (o.status === "Menunggu Konfirmasi")
+    actions = `<button class="inc-primary" onclick="sellerAction(${o.id},'Diproses')">Konfirmasi</button><button class="inc-danger" onclick="sellerAction(${o.id},'Ditolak')">Tolak</button>`;
+  else if (o.status === "Diproses")
+    actions = `<button class="inc-primary" onclick="sellerAction(${o.id},'Siap Diambil')">Siap diambil</button>`;
+  else if (o.status === "Siap Diambil")
+    actions = `<button class="inc-primary" onclick="openVerify(${o.id})">Verifikasi kode &amp; selesai</button>`;
+  return `<article class="order-card incoming-card"><img class="order-thumb" src="${esc(
+    img
+  )}"><div class="order-info"><b>#${o.id} · ${esc(
+    o.buyer_name
+  )}</b><small>${esc(names)}</small><small>${esc(o.buyer_phone)} · ${
+    o.pickup_method === "pickup" ? "Ambil sendiri" : "GoSend"
+  } · ${new Date(o.created_at).toLocaleTimeString("id-ID", {
+    hour: "2-digit",
+    minute: "2-digit",
+  })}</small><span>${rupiah(o.total)} · ${esc(
+    payTxt
+  )}</span><span class="status-pill">${esc(o.status)}</span>${
+    o.status === "Menunggu Konfirmasi" && o.seller_deadline
+      ? `<span class="deadline" data-deadline="${esc(
+          o.seller_deadline
+        )}"></span>`
+      : ""
+  }</div><div class="order-actions incoming-actions">${actions}</div></article>`;
+}
+function renderIncoming() {
+  const l = document.getElementById("incoming-list");
+  if (!l) return;
+  const groups = [
+    ["Perlu konfirmasi", "Menunggu Konfirmasi"],
+    ["Sedang diproses", "Diproses"],
+    ["Siap diambil pembeli", "Siap Diambil"],
+  ];
+  const html = groups
+    .map(([title, st]) => {
+      const rows = incomingOrders
+        .filter((o) => o.status === st)
+        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      return rows.length
+        ? `<h3 class="incoming-group">${title} <span>${
+            rows.length
+          }</span></h3>${rows.map(incomingCard).join("")}`
+        : "";
+    })
+    .join("");
+  l.innerHTML =
+    html ||
+    '<div class="loading">Belum ada pesanan masuk. Pesanan baru akan muncul otomatis di sini.</div>';
+  tickDeadlines();
+}
+function tickDeadlines() {
+  document.querySelectorAll(".deadline[data-deadline]").forEach((el) => {
+    const r = Math.floor((new Date(el.dataset.deadline) - Date.now()) / 1000);
+    el.textContent =
+      r > 0
+        ? `Konfirmasi sebelum ${Math.floor(r / 60)}:${String(r % 60).padStart(
+            2,
+            "0"
+          )}`
+        : "Batas konfirmasi berakhir";
+  });
+}
+async function sellerAction(id, status) {
+  if (
+    status === "Ditolak" &&
+    !confirm("Tolak pesanan ini? Stok akan dikembalikan ke menu.")
+  )
+    return;
+  try {
+    await api(`/api/orders/${id}/status`, {
+      method: "POST",
+      body: JSON.stringify({ status }),
+    });
+    toast(
+      status === "Ditolak"
+        ? "Pesanan ditolak."
+        : "Status pesanan diperbarui. Pembeli ikut melihat perubahannya."
+    );
+  } catch (e) {
+    toast(e.message);
+  }
+  await incomingTick();
+}
+function openVerify(id) {
+  const o = incomingOrders.find((x) => x.id === id);
+  if (!o) return;
+  verifyOrderId = id;
+  const cash = o.payment_method === "Tunai" && o.payment_status !== "PAID";
+  document.getElementById("verify-info").textContent =
+    `Pesanan #${o.id} · ${o.buyer_name} · ${rupiah(o.total)}.` +
+    (cash
+      ? ` Terima uang tunai ${rupiah(
+          o.total
+        )} dari pembeli, lalu masukkan kode unik.`
+      : " Minta kode unik dari pembeli.");
+  document.getElementById("verify-code").value = "";
+  openModal("verify-modal");
+  setTimeout(() => document.getElementById("verify-code").focus(), 50);
+}
+document.getElementById("verify-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const pin = document.getElementById("verify-code").value.trim();
+  try {
+    await api(`/api/orders/${verifyOrderId}/status`, {
+      method: "POST",
+      body: JSON.stringify({ status: "Selesai", pickup_pin: pin }),
+    });
+    closeModal("verify-modal");
+    toast("Pesanan selesai. Terima kasih!");
+    await incomingTick();
+  } catch (err) {
+    toast(err.message);
+  }
+});
+window.setInterval(() => {
+  if (!currentUser) return;
+  if (document.getElementById("history-page")?.classList.contains("active"))
+    loadOrders(true);
+  incomingTick();
+}, 5000);
+window.setInterval(tickDeadlines, 1000);
+
 async function cancelAny(id) {
   try {
     await api(`/api/orders/${id}/cancel`, { method: "POST", body: "{}" });
