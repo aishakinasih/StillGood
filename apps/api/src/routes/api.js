@@ -948,7 +948,7 @@ router.post("/orders", authenticate, allowRoles("buyer"), asyncRoute(async (req,
 
   requireValue(["pickup", "gosend"].includes(pickup_method), "Metode pengambilan tidak valid.");
 
-  requireValue(payment_method === "QRIS", "Saat ini Still Good hanya menerima pembayaran melalui QRIS.");
+  requireValue(["QRIS", "Tunai"].includes(payment_method), "Metode Pembayaran Tidak Valid. Pilih QRIS atau Tunai");
 
   const aggregated = new Map();
 
@@ -998,7 +998,7 @@ router.post("/orders", authenticate, allowRoles("buyer"), asyncRoute(async (req,
 
     }
 
-    const paymentMode = isMockPayment() ? "MOCK" : "MIDTRANS";
+    const paymentMode = payment_method === "Tunai" ? "Cash" : (isMockPayment()? "MOCK" : "MIDTRANS");
 
     const providerOrderId = `SG-${Date.now()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
 
@@ -1018,7 +1018,7 @@ router.post("/orders", authenticate, allowRoles("buyer"), asyncRoute(async (req,
 
         payment_method,
 
-        status: paymentMode === "MOCK" ? "Menunggu Konfirmasi" : "Menunggu Pembayaran",
+        status: paymentMode !== "MOCK" ? "Menunggu Konfirmasi" : "Menunggu Pembayaran",
 
         payment_status: paymentMode === "MOCK" ? "PAID" : "PENDING",
 
@@ -1028,9 +1028,9 @@ router.post("/orders", authenticate, allowRoles("buyer"), asyncRoute(async (req,
 
         pickup_pin: String(crypto.randomInt(0, 1_000_000)).padStart(6, "0"),
 
-        cancel_until: paymentMode === "MOCK" ? new Date(Date.now() + 60_000) : null,
+        cancel_until: paymentMode !== "MOCK" ? new Date(Date.now() + 60_000) : null,
 
-        seller_deadline: paymentMode === "MOCK" ? new Date(Date.now() + 5 * 60_000) : null,
+        seller_deadline: paymentMode !== "MOCK" ? new Date(Date.now() + 5 * 60_000) : null,
 
         paid_at: paymentMode === "MOCK" ? new Date() : null,
 
@@ -1092,9 +1092,8 @@ router.post("/orders", authenticate, allowRoles("buyer"), asyncRoute(async (req,
 
       const snap = await createMidtransSnap(order);
 
-      const payment = await prisma.payment.update({ where: { order_id: order.id }, data: { snap_token: snap.token, redirect_url: snap.redirectUrl } });
-
-      res.status(201).json({ ...serializeOrder({ ...order, payment }), payment_redirect_url: snap.redirectUrl, payment_mode: "midtrans" });
+      const payment = await notifyOrderParties(order, "NEW_ORDER", 'Pesanan #${order.id} masuk${order.payment_provider === "CASH" ? " (Bayar tunai saat pengambilan )" : ""}. Konfirmasi sebelum batas waktu lima menit.');
+      res.status(201).json({ ...serializeOrder(order), payment_mode: order.payment_provider === "CASH" ? "cash" : "MOCK" });
 
       return;
 
@@ -1236,7 +1235,21 @@ router.post("/orders/:id/status", authenticate, allowRoles("seller"), asyncRoute
 
   }
 
-  const updated = await prisma.order.update({ where: { id: order.id }, data: { status }, include: orderInclude });
+  const completingCash = status === "Selesai" && order.payment_provider === "CASH";
+
+  if (completingCash)
+    await prisma.payment.updateMany({
+      where: { order_id: order.id },
+      data: { status: "PAID", paid_at: new Date() },
+    });
+
+    const updated = await prisma.order.update({
+      where: { id: order.id },
+      data: completingCash
+        ? { status, payment_status: "PAID", paid_at: new Date() }
+        : { status },
+      include: orderInclude,
+    });
 
   const fresh = serializeOrder(updated);
 
