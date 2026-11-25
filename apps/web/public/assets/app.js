@@ -246,12 +246,22 @@ function renderSellerStore() {
   document.getElementById("seller-store-home-name").textContent = name;
   document.getElementById("seller-workspace-name").textContent = name;
   document.getElementById("seller-store-home-address").textContent = address;
-  document.getElementById("seller-store-rating").textContent = "…";
+  const ratingEl = document.getElementById("seller-store-rating");
+  if (ratingEl) {
+    ratingEl.textContent =
+      store.rating == null
+        ? "–"
+        : Number(store.rating).toLocaleString("id-ID", {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 1,
+          });
+  }
   const photo = document.getElementById("seller-store-photo");
   photo.innerHTML = store.logo
     ? `<img src="${esc(store.logo)}" alt="Foto toko ${esc(name)}">`
     : "";
 }
+
 function openStoreEdit() {
   if (currentUser?.role !== "seller") {
     toast("Masuk dengan akun penjual untuk mengubah toko.");
@@ -393,10 +403,14 @@ function renderStores() {
   const grid = document.getElementById("store-list");
   document.getElementById("result-count").textContent = stores.length;
   if (!stores.length) {
-    grid.innerHTML =
-      '<div class="empty-listing"><b>Belum ada toko terdaftar.</b><small>Toko akan tampil di sini setelah penjual membuat tokonya.</small></div>';
-    return;
-  }
+  grid.innerHTML = `
+    <div class="empty-listing" style="display: flex; flex-direction: column; align-items: flex-start; text-align: left; width: 100%; grid-column: 1 / -1;">
+      <div><b>Belum ada toko terdaftar.</b></div>
+      <div><small>Toko akan tampil di sini setelah penjual membuat tokonya.</small></div>
+    </div>
+  `;
+  return;
+}
   grid.innerHTML = stores
     .map(
       (s) =>
@@ -469,6 +483,10 @@ async function loadProducts() {
       '<div class="loading">Belum dapat memuat menu toko ini.</div>';
   }
 }
+
+let sellerProductsCache = [];
+let deleteProductId = null;
+
 function renderProducts() {
   const grid = document.getElementById("products");
   if (!catalog.length) {
@@ -477,23 +495,29 @@ function renderProducts() {
     return;
   }
   grid.innerHTML = catalog
-    .map(
-      (p) =>
-        `<article class="store-menu-row"><div class="store-menu-photo">${
-          p.image ? `<img src="${esc(p.image)}" alt="${esc(p.name)}">` : ""
-        }</div><div class="store-menu-copy"><h2>${esc(p.name)}</h2><p>${esc(
-          p.description || ""
-        )}</p><small>Berlaku sampai : ${String(p.safe_until || "").slice(
-          0,
-          5
-        )}</small></div><b class="store-menu-price">${rupiah(
-          p.sale_price
-        )}</b><button class="store-menu-add" onclick="addToCart(${
-          p.id
-        })" aria-label="Tambah ${esc(
-          p.name
-        )}"><span>+</span></button></article>`
-    )
+    .map((p) => {
+      const deleted = p.active === false;
+      return `<article class="store-menu-row${
+        deleted ? " is-deleted" : ""
+      }"${deleted ? ' aria-disabled="true"' : ""}><div class="store-menu-photo">${
+        p.image ? `<img src="${esc(p.image)}" alt="${esc(p.name)}">` : ""
+      }</div><div class="store-menu-copy"><div class="store-menu-text"><h2>${esc(
+        p.name
+      )}</h2><p>${esc(p.description || "")}</p></div>${
+        deleted
+          ? '<span class="store-menu-deleted-tag">Menu ini telah dihapus oleh penjual</span>'
+          : `<small>Berlaku sampai : ${String(p.safe_until || "").slice(
+              0,
+              5
+            )}</small>`
+      }</div><div class="store-menu-right"><b class="store-menu-price">${rupiah(
+        p.sale_price
+      )}</b><button class="store-menu-add" type="button" ${
+        deleted ? "disabled" : `onclick="addToCart(${p.id})"`
+      } aria-label="${
+        deleted ? "Menu tidak tersedia" : "Tambah " + esc(p.name)
+      }"><span>+</span></button></div></article>`;
+    })
     .join("");
 }
 function esc(s) {
@@ -512,7 +536,7 @@ function persistCart() {
 function addToCart(id) {
   if (!requireBuyer("menambahkan makanan ke keranjang")) return;
   const p = catalog.find((x) => x.id === id);
-  if (!p) return;
+  if (!p || p.active === false) return;
   if (Object.values(cart).some((x) => x.store_id !== p.store_id)) {
     toast("Selesaikan checkout toko saat ini sebelum memilih toko lain.");
     return;
@@ -1185,51 +1209,144 @@ async function cancelAny(id) {
 function showPin(id) {
   toast("Tunjukkan PIN di riwayat kepada mitra saat mengambil pesanan.");
 }
-async function rateOrder(id) {
-  const rating = Number(prompt("Beri rating 1–5 untuk toko ini:", "5"));
-  if (!rating || rating < 1 || rating > 5) return;
-  const comment = prompt(
-    "Tulis ulasan singkat (opsional):",
-    "Makanannya enak!"
-  );
+let ratingOrderId = null;
+let selectedRating = 5;
+const ratingCaptions = {
+  1: "1 / 5 · Kurang memuaskan",
+  2: "2 / 5 · Cukup",
+  3: "3 / 5 · Baik",
+  4: "4 / 5 · Enak & memuaskan",
+  5: "5 / 5 · Sangat memuaskan",
+};
+
+function setStarRating(val) {
+  selectedRating = Number(val) || 5;
+  document.querySelectorAll("#star-picker button").forEach((btn) => {
+    const star = Number(btn.dataset.star);
+    btn.classList.toggle("active", star <= selectedRating);
+  });
+  const cap = document.getElementById("star-caption");
+  if (cap)
+    cap.textContent = ratingCaptions[selectedRating] || `${selectedRating} / 5`;
+}
+
+function rateOrder(id) {
+  const o = ordersCache.find((x) => Number(x.id) === Number(id));
+  ratingOrderId = Number(id);
+  setStarRating(5);
+  const commentEl = document.getElementById("rate-comment");
+  if (commentEl) commentEl.value = "";
+  const infoEl = document.getElementById("rate-info");
+  if (infoEl) {
+    infoEl.textContent = o
+      ? `Pesanan #${o.id} · Beri penilaian untuk membantu toko terus berkembang.`
+      : "Bagaimana pengalamanmu dengan pesanan dari toko ini?";
+  }
+  openModal("rate-modal");
+}
+
+document.querySelectorAll("#star-picker button").forEach((btn) => {
+  btn.addEventListener("click", () => setStarRating(btn.dataset.star));
+});
+
+document.getElementById("rate-form")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!ratingOrderId) return;
+  const submitBtn = e.currentTarget.querySelector('button[type="submit"]');
+  if (submitBtn) submitBtn.disabled = true;
+  const comment = document.getElementById("rate-comment")?.value.trim() || "";
   try {
     await api("/api/reviews", {
       method: "POST",
-      body: JSON.stringify({ order_id: id, rating, comment }),
+      body: JSON.stringify({
+        order_id: ratingOrderId,
+        rating: selectedRating,
+        comment,
+      }),
     });
+    closeModal("rate-modal");
+    ratingOrderId = null;
     toast("Terima kasih atas ulasan baikmu!");
-  } catch (e) {
-    toast(e.message);
+    await Promise.all([loadOrders(true), loadStores()]);
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
   }
-}
+});
+
+window.rateOrder = rateOrder;
 function renderSellerHomeMenus(products) {
+  sellerProductsCache = Array.isArray(products) ? products : [];
   const list = document.getElementById("seller-home-menu-list");
-  if (!products.length) {
+  if (!sellerProductsCache.length) {
     list.innerHTML =
       '<p class="seller-home-empty">Belum ada menu di toko ini.</p>';
     return;
   }
-  list.innerHTML = products
+  list.innerHTML = sellerProductsCache
     .map(
       (p) =>
         `<article class="seller-home-menu-row"><div class="seller-home-menu-photo">${
           p.image ? `<img src="${esc(p.image)}" alt="${esc(p.name)}">` : ""
-        }</div><div class="seller-home-menu-copy"><h2>${esc(
+        }</div><div class="seller-home-menu-copy"><div class="seller-home-menu-text"><h2>${esc(
           p.name
-        )}</h2><p>${esc(p.description || "")}</p><small>Aman sampai ${String(
+        )}</h2><p>${esc(p.description || "")}</p></div><small>Aman sampai ${String(
           p.safe_until || ""
         ).slice(0, 5)} · ${
           p.stock
-        } porsi</small></div><b class="seller-home-menu-price">${rupiah(
+        } porsi</small></div><div class="seller-home-menu-right"><b class="seller-home-menu-price">${rupiah(
           p.sale_price
-        )}</b><button class="seller-home-menu-edit" type="button" onclick="editProduct(${
+        )}</b><div class="seller-home-menu-actions"><button class="seller-home-menu-edit" type="button" onclick="editProduct(${
           p.id
         })" aria-label="Edit ${esc(
           p.name
-        )}"><span aria-hidden="true">✎</span></button></article>`
+        )}"><span aria-hidden="true">✎</span></button><button class="seller-home-menu-delete" type="button" onclick="openDeleteProduct(${
+          p.id
+        })" aria-label="Hapus ${esc(
+          p.name
+        )}" title="Hapus menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6h12ZM10 11v6M14 11v6"/></svg></button></div></div></article>`
     )
     .join("");
 }
+
+function openDeleteProduct(id) {
+  const p =
+    sellerProductsCache.find((x) => Number(x.id) === Number(id)) ||
+    catalog.find((x) => Number(x.id) === Number(id));
+  deleteProductId = Number(id);
+  const infoEl = document.getElementById("delete-product-info");
+  if (infoEl) {
+    infoEl.textContent = p
+      ? `Menu "${p.name}" akan dihapus dari etalase toko dan ditampilkan nonaktif bagi pembeli.`
+      : "Menu ini akan dihapus dari etalase toko dan ditampilkan nonaktif bagi pembeli.";
+  }
+  const modal = document.getElementById("delete-product-modal");
+  if (modal) modal.classList.add("show");
+}
+
+async function confirmDeleteProduct() {
+  if (!deleteProductId) return;
+  const btn = document.getElementById("confirm-delete-product-btn");
+  if (btn) btn.disabled = true;
+  try {
+    await api(`/api/seller/products/${deleteProductId}`, {
+      method: "DELETE",
+    });
+    closeModal("delete-product-modal");
+    deleteProductId = null;
+    toast("Menu berhasil dihapus.");
+    await loadSeller();
+  } catch (err) {
+    toast(err.message || "Gagal menghapus menu.");
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+window.openDeleteProduct = openDeleteProduct;
+window.confirmDeleteProduct = confirmDeleteProduct;
+
 async function loadSeller() {
   const productList = document.getElementById("seller-products"),
     orderList = document.getElementById("seller-order-list");
@@ -1238,6 +1355,16 @@ async function loadSeller() {
   try {
     catalog = await api("/api/seller/products");
     renderSellerHomeMenus(catalog);
+    try {
+      const allStores = await api("/api/stores");
+      const myStore = allStores.find(
+        (s) => Number(s.id) === Number(currentUser?.store?.id)
+      );
+      if (myStore && currentUser.store) {
+        currentUser.store.rating = myStore.rating;
+        renderSellerStore();
+      }
+    } catch (_) {}
     productList.dataset.loaded = "1";
     productList.innerHTML = catalog.length
       ? catalog
@@ -1378,8 +1505,12 @@ function adjustStock(id) {
 }
 async function loadAdmin() {
   try {
-    const rows = await api("/api/admin/categories");
-    document.getElementById("category-list").innerHTML = rows
+    const [categories, sellers] = await Promise.all([
+      api("/api/admin/categories"),
+      api("/api/admin/sellers"),
+    ]);
+
+    document.getElementById("category-list").innerHTML = categories
       .map(
         (c) =>
           `<div class="seller-product"><div><b>${esc(c.name)}</b><small>${
@@ -1393,6 +1524,22 @@ async function loadAdmin() {
           })">Hapus</button></div>`
       )
       .join("");
+
+    const sellerList = document.getElementById("seller-list");
+    if (sellerList) {
+      sellerList.innerHTML = sellers.length
+        ? sellers
+            .map(
+              (s) =>
+                `<div class="seller-product"><div><b>${esc(
+                  s.name
+                )}</b><small>${esc(s.email)} · ${esc(
+                  s.store?.name || "Belum ada toko"
+                )} (ID Toko: ${s.store?.id ?? "-"})</small></div></div>`
+            )
+            .join("")
+        : '<p class="loading">Belum ada akun penjual terdaftar.</p>';
+    }
   } catch (e) {
     toast(e.message);
   }
@@ -1479,6 +1626,29 @@ document.getElementById("category-form").onsubmit = async (e) => {
     toast(err.message);
   }
 };
+
+const sellerCreateForm = document.getElementById("seller-create-form");
+if (sellerCreateForm) {
+  sellerCreateForm.onsubmit = async (e) => {
+    e.preventDefault();
+    const btn = e.currentTarget.querySelector("button[type='submit']");
+    btn.disabled = true;
+    try {
+      const created = await api("/api/admin/sellers", {
+        method: "POST",
+        body: JSON.stringify(Object.fromEntries(new FormData(e.currentTarget))),
+      });
+      e.currentTarget.reset();
+      await loadAdmin();
+      toast(`Akun ${created.name} & ${created.store.name} berhasil dibuat.`);
+    } catch (err) {
+      toast(err.message);
+    } finally {
+      btn.disabled = false;
+    }
+  };
+}
+
 function updateImpact() {
   api("/api/orders")
     .then((orders) => {

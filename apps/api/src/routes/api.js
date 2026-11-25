@@ -563,47 +563,25 @@ router.get("/stores", asyncRoute(async (req, res) => {
 }));
 
 
-
 router.get("/products", asyncRoute(async (req, res) => {
-
   const { category = "Semua", store_id, q } = req.query;
-
   const nowTime = timeNow();
-
+  const isStoreDetail = Boolean(store_id);
   const products = await prisma.product.findMany({
-
     where: {
-
-      active: true,
-
-      stock: { gt: 0 },
-
-      safe_until: { gte: nowTime },
-
+      ...(isStoreDetail ? {} : { active: true, stock: { gt: 0 }, safe_until: { gte: nowTime } }),
       store: { owner_id: { not: null } },
-
       ...(store_id ? { store_id: Number(store_id) } : {}),
-
       ...(category && category !== "Semua" ? { categoryRef: { name: String(category), active: true } } : {}),
-
       ...(q ? { OR: [
-
         { name: { contains: String(q), mode: "insensitive" } },
-
         { store: { name: { contains: String(q), mode: "insensitive" } } },
-
       ] } : {}),
-
     },
-
     include: { store: true, categoryRef: true },
-
-    orderBy: [{ stock: "desc" }, { created_at: "desc" }],
-
+    orderBy: [{ active: "desc" }, { stock: "desc" }, { created_at: "desc" }],
   });
-
   res.json(products.map(serializeProduct));
-
 }));
 
 
@@ -773,16 +751,14 @@ router.post("/profile", authenticate, imageUpload.single("logo"), asyncRoute(asy
 // Seller product management.
 
 router.get("/seller/products", authenticate, allowRoles("seller"), asyncRoute(async (req, res) => {
-
   const store = await getSellerStore(req.user.id);
-
-  const products = await prisma.product.findMany({ where: { store_id: store.id }, include: { store: true, categoryRef: true }, orderBy: { created_at: "desc" } });
-
+  const products = await prisma.product.findMany({
+    where: { store_id: store.id, active: true },
+    include: { store: true, categoryRef: true },
+    orderBy: { created_at: "desc" },
+  });
   res.json(products.map(serializeProduct));
-
 }));
-
-
 
 router.post("/seller/products", authenticate, allowRoles("seller"), imageUpload.single("image"), asyncRoute(async (req, res) => {
 
@@ -932,7 +908,52 @@ router.delete("/admin/categories/:id", authenticate, allowRoles("admin"), asyncR
 
 }));
 
+// Admin seller & store provisioning.
+router.get("/admin/sellers", authenticate, allowRoles("admin"), asyncRoute(async (_req, res) => {
+  const sellers = await prisma.user.findMany({
+    where: { role: "seller" },
+    include: { store: true },
+    orderBy: { created_at: "desc" },
+  });
+  res.json(sellers.map((u) => ({ ...safeUser(u), store: u.store })));
+}));
 
+router.post("/admin/sellers", authenticate, allowRoles("admin"), asyncRoute(async (req, res) => {
+  const { name, email, password } = req.body;
+  const cleanName = String(name || "").trim();
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+
+  requireValue(cleanName.length > 0 && cleanName.length <= 100, "Nama penjual wajib diisi (maksimal 100 karakter).");
+  requireValue(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail), "Format email tidak valid.");
+  requireValue(String(password || "").length >= 8, "Kata sandi minimal 8 karakter.");
+
+  const exists = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+  requireValue(!exists, "Email sudah digunakan.", 409);
+
+  const hash = await bcrypt.hash(String(password), Number(process.env.BCRYPT_ROUNDS || 12));
+
+  const created = await prisma.$transaction(async (tx) => {
+    const seller = await tx.user.create({
+      data: {
+        name: cleanName,
+        email: normalizedEmail,
+        password: hash,
+        role: "seller",
+      },
+    });
+
+    const store = await tx.store.create({
+      data: {
+        owner_id: seller.id,
+        name: `Toko ${cleanName}`,
+      },
+    });
+
+    return { ...safeUser(seller), store };
+  });
+
+  res.status(201).json(created);
+}));
 
 // Orders, stock reservation and payment.
 
